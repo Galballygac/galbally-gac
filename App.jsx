@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 
 const SUPABASE_URL = "https://aknsqvocpdwvrsoilfgw.supabase.co";
 const SUPABASE_KEY = "sb_publishable_FLQTXdsMkW6GzygyjhGk0w_VuhkIfEn";
@@ -24,8 +24,10 @@ async function upsertBooking(row) { return await sbFetch("POST", "/bookings", ro
 async function deleteBooking(sk) { return await sbFetch("DELETE", `/bookings?slot_key=eq.${encodeURIComponent(sk)}`); }
 
 const TEAMS = [
-  "Senior Mens","Reserve Mens","Minor Boys","U16 Boys","U15 Boys","U14 Boys","U13 Boys","U12 Boys","U10 Boys","U8 Boys","U6 Boys",
-  "Senior Ladies","Reserve Ladies","Minor Girls","U16 Girls","U15 Girls","U14 Girls","U13 Girls","U12 Girls","U10 Girls","U8 Girls","U6 Girls",
+  "Senior Mens","Reserve Mens","Minor Boys","U16 Boys","U15 Boys","U14 Boys",
+  "U13 Boys","U12 Boys","U10 Boys","U8 Boys","U6 Boys",
+  "Senior Ladies","Reserve Ladies","Minor Girls","U16 Girls","U15 Girls","U14 Girls",
+  "U13 Girls","U12 Girls","U10 Girls","U8 Girls","U6 Girls","Other",
 ];
 
 const PITCHES = [
@@ -56,11 +58,9 @@ function rowsToMap(rows){
 
 export default function App() {
   const [teamName, setTeamName]         = useState(()=>localStorage.getItem("gac_team")||"");
-  const [teamInput, setTeamInput]       = useState("");
+  const [teamSelect, setTeamSelect]     = useState("");
   const [teamErr, setTeamErr]           = useState("");
   const [showTeamModal, setShowTeamModal] = useState(false);
-  const [suggestions, setSuggestions]   = useState([]);
-  const teamInputRef                    = useRef(null);
 
   const [bookings, setBookings]         = useState({});
   const [loading, setLoading]           = useState(true);
@@ -83,11 +83,6 @@ export default function App() {
   const base  = new Date(today); base.setDate(today.getDate()+weekOffset*7);
   const week  = getWeekDates(base);
 
-  // Focus input when modal opens
-  useEffect(()=>{
-    if(showTeamModal){ setTimeout(()=>teamInputRef.current?.focus(), 100); }
-  },[showTeamModal]);
-
   const fetchBookings = useCallback(async()=>{
     try {
       const rows = await loadBookings();
@@ -100,20 +95,20 @@ export default function App() {
 
   function showToast(m){ setToast(m); setTimeout(()=>setToast(null),3500); }
 
-  function handleTeamInput(val){
-    setTeamInput(val); setTeamErr("");
-    setSuggestions(val.trim().length>0 ? TEAMS.filter(t=>t.toLowerCase().includes(val.toLowerCase())) : []);
+  function openTeamModal(){
+    setTeamSelect(teamName||"");
+    setTeamErr("");
+    setShowTeamModal(true);
   }
 
-  function confirmTeam(name){
-    const n=(name||teamInput).trim();
-    if(!n){ setTeamErr("Please enter your team name."); return; }
-    setTeamName(n); localStorage.setItem("gac_team",n);
-    setShowTeamModal(false); setTeamInput(""); setSuggestions([]);
-    setView("pitches"); showToast(`Welcome, ${n}!`);
+  function confirmTeam(){
+    if(!teamSelect){ setTeamErr("Please select your team."); return; }
+    setTeamName(teamSelect);
+    localStorage.setItem("gac_team", teamSelect);
+    setShowTeamModal(false);
+    setView("pitches");
+    showToast(`Welcome, ${teamSelect}!`);
   }
-
-  function changeTeam(){ setTeamInput(teamName); setSuggestions([]); setTeamErr(""); setShowTeamModal(true); }
 
   function isBooked(pid,half,dk,t){
     if(bookings[slotKey(pid,"full",dk,t)]) return true;
@@ -166,41 +161,29 @@ export default function App() {
   const pitch=PITCHES.find(p=>p.id===selPitch);
   const upcoming=Object.entries(bookings).filter(([,v])=>!v.continuation).map(([k,v])=>{ const[pid,half,dk]=k.split("|"); return{key:k,pitchId:pid,half,dateKey:dk,...v}; }).filter(b=>b.dateKey>=getDateKey(today)).sort((a,b)=>a.dateKey.localeCompare(b.dateKey)||a.time.localeCompare(b.time));
 
-  // ── TEAM MODAL ─────────────────────────────────────────────────────────────
+  // ── TEAM MODAL (dropdown only — no typing) ────────────────────────────────
   const TeamModal = () => (
     <div style={S.overlay}>
       <div style={S.loginCard} className="fade-in">
         <div style={{fontSize:40,marginBottom:8}}>🏐</div>
         <h1 style={S.loginClub}>Galbally Pearses GAC</h1>
         <div style={S.loginDivider}/>
-        <p style={S.loginSystem}>Enter your team name to make a booking</p>
-        <div style={{position:"relative"}}>
-          <div style={S.formGroup}>
-            <label style={S.label}>Team Name</label>
-            <input
-              ref={teamInputRef}
-              style={S.input}
-              placeholder="e.g. Senior Mens, U16 Girls…"
-              value={teamInput}
-              onChange={e=>handleTeamInput(e.target.value)}
-              onKeyDown={e=>e.key==="Enter"&&confirmTeam()}
-            />
-          </div>
-          {suggestions.length>0&&(
-            <div style={S.suggestions}>
-              {suggestions.map(s=>(
-                <div key={s} style={S.suggestion}
-                  onMouseDown={e=>{ e.preventDefault(); confirmTeam(s); }}>
-                  {s}
-                </div>
-              ))}
-            </div>
-          )}
+        <p style={S.loginSystem}>Select your team to make a booking</p>
+        <div style={S.formGroup}>
+          <label style={S.label}>Your Team</label>
+          <select
+            style={S.select}
+            value={teamSelect}
+            onChange={e=>{ setTeamSelect(e.target.value); setTeamErr(""); }}
+          >
+            <option value="">— Select your team —</option>
+            {TEAMS.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
         </div>
         {teamErr&&<div style={S.loginErr}>{teamErr}</div>}
-        <button style={S.loginBtn} onClick={()=>confirmTeam()}>Continue →</button>
-        {teamName&&<button style={S.cancelLoginBtn} onClick={()=>{setShowTeamModal(false);setTeamInput("");setSuggestions([]);}}>Cancel</button>}
-        <div style={S.loginHint}>Just type your team name — no password needed</div>
+        <button style={S.loginBtn} onClick={confirmTeam}>Continue →</button>
+        {teamName&&<button style={S.cancelLoginBtn} onClick={()=>setShowTeamModal(false)}>Cancel</button>}
+        <div style={S.loginHint}>No password needed — just select your team</div>
       </div>
     </div>
   );
@@ -282,8 +265,8 @@ export default function App() {
               <button style={{...S.navBtn,...(view==="book"?S.navBtnActive:{})}} onClick={()=>setView("book")}>Book</button>
             </>}
             {teamName
-              ?<button style={S.coachPill} onClick={changeTeam}>👤 {teamName} ✎</button>
-              :<button style={S.signInBtn} onClick={()=>{setTeamInput("");setSuggestions([]);setShowTeamModal(true);}}>+ Book a Pitch</button>
+              ?<button style={S.coachPill} onClick={openTeamModal}>👤 {teamName} ✎</button>
+              :<button style={S.signInBtn} onClick={openTeamModal}>+ Book a Pitch</button>
             }
           </nav>
         </div>
@@ -507,8 +490,7 @@ const S={
   formGroup:{marginBottom:14,textAlign:"left"},
   label:{display:"block",fontSize:10,color:DKBLUE,marginBottom:5,letterSpacing:"0.5px",textTransform:"uppercase",fontWeight:700},
   input:{width:"100%",background:"#eff6ff",border:"1px solid #bfdbfe",color:"#0f172a",padding:"11px 13px",borderRadius:9,fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"},
-  suggestions:{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #bfdbfe",borderRadius:9,boxShadow:"0 8px 24px rgba(30,58,138,0.12)",zIndex:10,maxHeight:220,overflowY:"auto"},
-  suggestion:{padding:"10px 14px",cursor:"pointer",fontSize:14,color:DKBLUE,borderBottom:"1px solid #eff6ff"},
+  select:{width:"100%",background:"#fff",border:`2px solid ${BLUE}`,color:"#0f172a",padding:"13px 14px",borderRadius:10,fontSize:15,fontFamily:"inherit",outline:"none",boxSizing:"border-box",cursor:"pointer",appearance:"auto"},
   overlay:{position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200},
   loginCard:{background:"#fff",borderRadius:20,padding:"36px 36px 28px",width:360,textAlign:"center",boxShadow:"0 30px 80px rgba(0,0,0,0.35)"},
   loginClub:{fontSize:19,fontWeight:700,color:DKBLUE,margin:"0 0 6px"},
@@ -534,5 +516,4 @@ const css=`
   @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(12px);}to{opacity:1;transform:translateX(-50%) translateY(0);}}
   @keyframes spin{to{transform:rotate(360deg);}}
   .pitch-card:hover{transform:translateY(-3px);box-shadow:0 12px 32px rgba(30,58,138,0.15) !important;}
-  input:focus{border-color:#1d4ed8 !important;box-shadow:0 0 0 3px rgba(29,78,216,0.15) !important;}
 `;
